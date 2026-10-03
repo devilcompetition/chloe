@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chloe Chat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <div class="glow-orb orb-one"></div>
+    <div class="glow-orb orb-two"></div>
+
+    <div class="chat-container">
+      <div class="chat-header">
+        <div class="avatar-ring">
+          <div class="avatar">C</div>
+        </div>
+        <div class="title-wrap">
+          <h1>Chloe</h1>
+          <span id="mode-label">Romantic mode</span>
+        </div>
+      </div>
+
+      <div class="mode-row">
+        <button class="mode-btn active" data-mode="romantic">Romantic</button>
+        <button class="mode-btn" data-mode="cyber">Cyber Tutor</button>
+        <button class="mode-btn" data-mode="pentest">Pentester</button>
+        <button class="mode-btn" data-mode="ctf">CTF Coach</button>
+        <button class="mode-btn" data-mode="all">All-in-One</button>
+      </div>
+
+      <div id="chat-box" class="chat-box">
+        <div class="message bot">Hey, I’m Chloe. Think midnight neon, a soft place to land, and a clever co-pilot for whatever’s on your mind.</div>
+      </div>
+
+      <div class="input-row">
+        <input id="user-input" type="text" placeholder="Type your message..." aria-label="Message Chloe" />
+        <button id="send-btn">Send</button>
+        <button id="voice-btn" class="voice-btn" type="button" aria-pressed="false">Start voice</button>
+      </div>
+      <div id="voice-status" class="voice-status" role="status" aria-live="polite"></div>
+    </div>
+
+    <script>
+      const chatBox = document.getElementById('chat-box');
+      const userInput = document.getElementById('user-input');
+      const sendBtn = document.getElementById('send-btn');
+      const voiceBtn = document.getElementById('voice-btn');
+      const voiceStatus = document.getElementById('voice-status');
+      const modeLabel = document.getElementById('mode-label');
+      const modeButtons = document.querySelectorAll('.mode-btn');
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      let currentMode = 'romantic';
+      let isSending = false;
+      let voiceSessionActive = false;
+      let isListening = false;
+      let isSpeaking = false;
+      let recognition = null;
+
+      if (SpeechRecognition && 'speechSynthesis' in window) {
+        recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.continuous = true;
+        recognition.interimResults = false;
+        recognition.onstart = () => {
+          isListening = true;
+          voiceStatus.textContent = 'Listening';
+          voiceBtn.textContent = 'Stop voice';
+        };
+        recognition.onresult = (event) => {
+          let transcript = '';
+          for (let index = event.resultIndex; index < event.results.length; index += 1) {
+            if (event.results[index].isFinal) transcript += event.results[index][0].transcript;
+          }
+          if (transcript.trim()) {
+            if (isListening && recognition) recognition.stop();
+            userInput.value = transcript.trim();
+            sendMessage(true);
+          }
+        };
+        recognition.onerror = (event) => {
+          if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+            voiceSessionActive = false;
+            updateVoiceButton();
+            voiceStatus.textContent = 'Microphone access was blocked. Allow it in your browser settings to use voice chat.';
+          } else if (event.error !== 'no-speech' && voiceSessionActive) {
+            voiceStatus.textContent = 'Voice recognition had a problem. Try starting voice chat again.';
+          }
+        };
+        recognition.onend = () => {
+          isListening = false;
+          if (voiceSessionActive && !isSending && !isSpeaking) {
+            window.setTimeout(startListening, 250);
+          }
+        };
+      } else {
+        voiceBtn.disabled = true;
+        voiceBtn.title = 'Voice chat is not supported in this browser.';
+        voiceStatus.textContent = 'Voice chat is not supported in this browser. You can still type to Chloe.';
+      }
+
+      function updateVoiceButton() {
+        voiceBtn.textContent = voiceSessionActive ? 'Stop voice' : 'Start voice';
+        voiceBtn.classList.toggle('voice-active', voiceSessionActive);
+        voiceBtn.setAttribute('aria-pressed', String(voiceSessionActive));
+      }
+
+      function startListening() {
+        if (!voiceSessionActive || !recognition || isListening || isSending || isSpeaking) return;
+        try {
+          recognition.start();
+        } catch (error) {
+          voiceStatus.textContent = 'Could not start the microphone. Try again in a moment.';
+        }
+      }
+
+      function speakReply(text) {
+        if (!voiceSessionActive) return;
+        isSpeaking = true;
+        voiceStatus.textContent = 'Chloe is speaking';
+        if (isListening && recognition) recognition.stop();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.onend = () => {
+          isSpeaking = false;
+          if (voiceSessionActive) {
+            voiceStatus.textContent = 'Listening';
+            startListening();
+          }
+        };
+        utterance.onerror = () => {
+          isSpeaking = false;
+          if (voiceSessionActive) {
+            voiceStatus.textContent = 'Ready for you to speak';
+            startListening();
+          }
+        };
+        window.speechSynthesis.speak(utterance);
+      }
+
+      voiceBtn.addEventListener('click', () => {
+        if (!recognition) return;
+        voiceSessionActive = !voiceSessionActive;
+        updateVoiceButton();
+        if (voiceSessionActive) {
+          voiceStatus.textContent = 'Starting microphone...';
+          startListening();
+        } else {
+          recognition.stop();
+          window.speechSynthesis.cancel();
+          isListening = false;
+          isSpeaking = false;
+          voiceStatus.textContent = 'Voice chat stopped';
+        }
+      });
+
+      function updateInputHint() {
+        const ctfMode = currentMode === 'ctf' || currentMode === 'all';
+        userInput.placeholder = ctfMode
+          ? 'CTF: Challenge name URL: https://...'
+          : 'Type your message...';
+        userInput.setAttribute('aria-label', ctfMode
+          ? 'Enter a CTF name and challenge URL'
+          : 'Message Chloe');
+      }
+
+      function updateModeButtons() {
+        modeButtons.forEach((button) => {
+          const isActive = button.dataset.mode === currentMode;
+          button.classList.toggle('active', isActive);
+        });
+      }
+
+      function addMessage(text, sender) {
+        const div = document.createElement('div');
+        div.className = `message ${sender}`;
+        div.textContent = text;
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+
+      modeButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          currentMode = button.dataset.mode;
+          modeLabel.textContent = button.textContent + ' mode';
+          updateModeButtons();
+          updateInputHint();
+        });
+      });
+
+      async function sendMessage(fromVoice = false) {
+        const text = userInput.value.trim();
+        if (!text || isSending) return;
+
+        addMessage(text, 'user');
+        userInput.value = '';
+        isSending = true;
+        sendBtn.disabled = true;
+        const status = document.createElement('div');
+        status.className = 'message bot';
+        status.textContent = currentMode === 'ctf' || currentMode === 'all'
+          ? 'Chloe is reviewing the challenge page...'
+          : 'Chloe is thinking...';
+        chatBox.appendChild(status);
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        try {
+          const response = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text, mode: currentMode })
+          });
+          const data = await response.json();
+          status.remove();
+          addMessage(data.reply, 'bot');
+          if (fromVoice) speakReply(data.reply);
+        } catch (error) {
+          status.remove();
+          const errorReply = 'Something went wrong. Please try again.';
+          addMessage(errorReply, 'bot');
+          if (fromVoice) speakReply(errorReply);
+        } finally {
+          isSending = false;
+          sendBtn.disabled = false;
+          if (voiceSessionActive && !fromVoice) startListening();
+        }
+      }
+
+      async function checkDueReminders() {
+        try {
+          const response = await fetch('/reminders/due');
+          const data = await response.json();
+          data.reminders.forEach((task) => {
+            const reminder = `Aarya, your reminder: ${task}.`;
+            addMessage(reminder, 'bot');
+            if (voiceSessionActive) speakReply(reminder);
+          });
+        } catch (error) {
+          voiceStatus.textContent = 'Could not check reminders right now.';
+        }
+      }
+
+      sendBtn.addEventListener('click', sendMessage);
+      userInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          sendMessage();
+        }
+      });
+      window.setInterval(checkDueReminders, 15000);
+    </script>
+  </body>
+</html>
